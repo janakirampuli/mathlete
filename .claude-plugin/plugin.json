@@ -1,0 +1,24 @@
+{
+  "name": "mathlete",
+  "version": "0.3.0",
+  "description": "Mental math questions above the prompt while Claude works: skill tree, adaptive difficulty, XP, levels and achievements",
+  "author": {
+    "name": "Janaki"
+  },
+  "repository": "https://github.com/janakirampuli/mathlete",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "delaySeconds": {
+      "type": "number",
+      "title": "Question delay (seconds)",
+      "description": "Show a question only after Claude has worked this long; 0 shows it at once",
+      "default": 0
+    },
+    "sound": {
+      "type": "boolean",
+      "title": "Sounds",
+      "description": "Play a chime on level-ups and achievements (macOS)",
+      "default": true
+    }
+  }
+}

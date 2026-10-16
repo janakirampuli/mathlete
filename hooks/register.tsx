@@ -1,0 +1,260 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
+
+import type { Feedback, Profile } from '../types'
+import { ACHIEVEMENTS } from './achievements'
+import {
+  EMPTY_PROFILE,
+  chooseStep,
+  dayKey,
+  grade,
+  lastDays,
+  levelProgress,
+  nextQuestion,
+  normalizeProfile,
+  parseAnswer,
+  pct,
+  progressBar,
+  skillRecord,
+  sparkline,
+  stars,
+  statsText,
+  statusLine,
+  titleFor,
+} from './math'
+import { SKILLS, skillById } from './skills'
+
+const PANE = 'mathlete'
+
+const question = atom({ plugin: 'mathlete', key: 'question' } as const, null)
+const feedback = atom({ plugin: 'mathlete', key: 'feedback' } as const, null)
+const draft = atom({ plugin: 'mathlete', key: 'draft' } as const, '')
+const profile = atom({ plugin: 'mathlete', key: 'profile' } as const, EMPTY_PROFILE)
+const isPaused = atom({ plugin: 'mathlete', key: 'isPaused' } as const, false)
+const currentTurn = atom({ plugin: 'mathlete', key: 'currentTurn' } as const, null)
+const armedTurn = atom({ plugin: 'mathlete', key: 'armedTurn' } as const, null)
+
+async function loadProfile($: EngineInterface): Promise<Profile> {
+  return normalizeProfile(await $.store.get('profile'))
+}
+
+async function freshQuestion($: EngineInterface) {
+  const previous = await read($, question)
+  const p = await read($, profile)
+  await update($, question, () => nextQuestion(p, Math.random, previous))
+  await update($, draft, () => '')
+}
+
+async function setPaused($: EngineInterface, paused: boolean) {
+  await $.store.set('paused', paused)
+  await update($, isPaused, () => paused)
+  $.ui.status(statusLine(await read($, profile), paused))
+}
+
+function play($: EngineInterface, asset: string, hasSound: boolean) {
+  if (hasSound) $.audio.play({ asset }).catch(() => undefined)
+}
+
+async function answer($: EngineInterface, text: string, hasSound: boolean) {
+  const q = await read($, question)
+  if (!q) return
+
+  const given = parseAnswer(text)
+  if (given === null) {
+    await update($, feedback, (): Feedback => ({ isCorrect: false, text: 'Type a number' }))
+    return
+  }
+
+  const now = await $.clock.now()
+  const seconds = q.startedAt === null ? q.targetSeconds : (now - q.startedAt) / 1000
+
+  // Grade against the stored profile so another session's progress is kept.
+  const result = grade(await loadProfile($), q, given, seconds, now)
+  await $.store.set('profile', result.profile)
+  await update($, profile, () => result.profile)
+
+  const text_ = result.isCorrect
+    ? `✓ ${q.prompt} = ${q.answer}  +${result.gained} XP (${seconds.toFixed(1)}s)`
+    : `✗ ${q.prompt} = ${q.answer}, not ${given}`
+  await update($, feedback, (): Feedback => ({ isCorrect: result.isCorrect, text: text_ }))
+
+  for (const a of result.earned) $.ui.toast(`🏆 ${a.name}: ${a.description}`)
+  if (result.leveledUp) {
+    const { level } = levelProgress(result.profile)
+    const unlocks = result.unlocked.length > 0 ? ` Unlocked ${result.unlocked.map(s => s.name).join(', ')}.` : ''
+    $.ui.toast(`🧮 Level ${level}: ${titleFor(level)}!${unlocks}`)
+    play($, 'sounds/levelup.wav', hasSound)
+  } else if (result.earned.length > 0) {
+    play($, 'sounds/achievement.wav', hasSound)
+  }
+  $.ui.status(statusLine(result.profile))
+
+  await freshQuestion($)
+}
+
+export const register: Register = (on, options) => {
+  const delayMs = Math.max(0, Number(options.delaySeconds ?? 0)) * 1000
+  const hasSound = options.sound !== false
+
+  on('session.start', async ($, e, next) => {
+    const loaded = await loadProfile($)
+    const paused = (await $.store.get('paused')) === true
+    await update($, profile, () => loaded)
+    await update($, isPaused, () => paused)
+    $.ui.status(statusLine(loaded, paused))
+
+    // A question kept in session state from an older version of the mod.
+    const q = await read($, question)
+    if (q && typeof (q as { skill?: unknown }).skill !== 'string') await freshQuestion($)
+
+    await $.command.register({ name: 'math', description: 'mathlete stats pane; /math stats, /math pause, /math resume' })
+
+    return next(e)
+  })
+
+  on('command.run', { command: 'math' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg === 'pause') {
+      await setPaused($, true)
+      return { text: '🧮 Paused. /math resume brings the questions back.' }
+    }
+    if (arg === 'resume') {
+      await setPaused($, false)
+      return { text: '🧮 Back on. Questions show while Claude works.' }
+    }
+
+    const loaded = await loadProfile($)
+    await update($, profile, () => loaded)
+    if (arg !== 'stats') {
+      const opened = await $.ui.open({ id: PANE, title: 'mathlete', focus: true, closeOnEscape: true })
+      if (opened.isPlaced) return {}
+    }
+    return { text: statsText(loaded, await read($, isPaused)) }
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId) return next(e)
+
+    const { turnId } = e
+    await update($, currentTurn, () => turnId)
+    if (delayMs === 0) await update($, armedTurn, () => turnId)
+    else $.clock.after(delayMs, () => void update($, armedTurn, () => turnId))
+
+    if (!(await read($, isPaused)) && !(await read($, question))) await freshQuestion($)
+
+    return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || e.surface === 'mobile' || (await read($, isPaused))) return next(e)
+
+    const q = await read($, question)
+    if (!q) return next(e)
+    // Show once Claude has worked for the delay, and stay up once typing starts.
+    const isArmed = (await read($, armedTurn)) === (await read($, currentTurn))
+    if (q.startedAt === null && !(e.props.isWorking && isArmed)) return next(e)
+
+    const p = await read($, profile)
+    const fb = await read($, feedback)
+    const value = await read($, draft)
+    const { level, into, span } = levelProgress(p)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const barWidth = Math.max(5, Math.min(20, e.props.bodyColumns - 50))
+
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text bold>🧮 Lv {level} </Text>
+          <Text dimColor>
+            {progressBar(p, barWidth)} {into}/{span} XP
+            {p.streak > 0 ? `  🔥 ${p.streak}` : ''}  · {skillById(q.skill).name}
+          </Text>
+        </Box>
+        <Box>
+          <Input
+            key="answer"
+            label={`${q.prompt} = `}
+            placeholder="ctrl+x tab to answer"
+            submitLabel="check"
+            value={value}
+            onInput={async text => {
+              await update($, draft, () => text)
+              const now = await $.clock.now()
+              await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now } : cur))
+            }}
+            onSubmit={text => answer($, text, hasSound)}
+          />
+          <Text> </Text>
+          <Button key="skip" label="skip" onPress={() => freshQuestion($)} />
+        </Box>
+        {fb && <Text color={fb.isCorrect ? 'green' : 'red'}>{fb.text}</Text>}
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const p = await read($, profile)
+    const paused = await read($, isPaused)
+    const now = await $.clock.now()
+    const { level, into, span } = levelProgress(p)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const width = e.props.bodyColumns
+
+    const days = lastDays(now, 14)
+    const dayXp = days.map(d => p.daily[d]?.xp ?? 0)
+    const today = p.daily[dayKey(now)]
+    const weekXp = dayXp.slice(-7).reduce((a, b) => a + b, 0)
+
+    const row = (text: string, dim = false) => (
+      <Text mono dimColor={dim} wrap="truncate-end">
+        {text}
+      </Text>
+    )
+
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text bold>
+            🧮 Level {level} · {titleFor(level)}
+          </Text>
+          {paused && <Text color="yellow">  paused</Text>}
+        </Box>
+        {row(`${progressBar(p, Math.max(10, Math.min(30, width - 30)))}  ${into}/${span} XP`)}
+        {row(
+          `Solved ${p.solved}/${p.attempted} (${pct(p.solved, p.attempted)}) · 🔥 ${p.streak} (best ${p.bestStreak}) · 📅 ${p.dayStreak} days (best ${p.bestDayStreak})` +
+            (p.fastest === null ? '' : ` · ⚡ ${p.fastest.toFixed(1)}s`),
+          true,
+        )}
+        <Text> </Text>
+        <Text bold>Last 14 days</Text>
+        {row(`${sparkline(dayXp)}  ${weekXp} XP this week · today ${today?.solved ?? 0}/${today?.attempted ?? 0}`)}
+        <Text> </Text>
+        <Text bold>Skills</Text>
+        {SKILLS.map(skill => {
+          const name = skill.name.padEnd(15)
+          if (skill.unlockLevel > level) return row(`${name} 🔒 level ${skill.unlockLevel}`, true)
+          const r = skillRecord(p, skill.id)
+          const step = chooseStep(skill, r.rating, () => 0.5)
+          const trend = sparkline(p.trend[skill.id] ?? []).padEnd(12)
+          return row(
+            `${name} ${stars(step, skill.steps.length).padEnd(6)} ${String(r.rating).padStart(5)} ${trend} ${pct(r.solved, r.attempted).padStart(4)}`,
+          )
+        })}
+        <Text> </Text>
+        <Text bold>
+          Achievements {Object.keys(p.achievements).length}/{ACHIEVEMENTS.length}
+        </Text>
+        {ACHIEVEMENTS.map(a =>
+          p.achievements[a.id]
+            ? row(`🏆 ${a.name.padEnd(17)} ${a.description}`)
+            : row(`·  ${a.name.padEnd(17)} ${a.description}`, true),
+        )}
+        <Text> </Text>
+        <Box>
+          <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+          <Text dimColor>  Esc closes · /math pause turns questions off</Text>
+        </Box>
+      </Box>
+    )
+  })
+}
