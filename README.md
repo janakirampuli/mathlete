@@ -97,3 +97,7 @@ To try a local copy, run `claude --plugin-dir /path/to/mathlete`. To run the tes
 claude plugin test .
 claude plugin validate .
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
