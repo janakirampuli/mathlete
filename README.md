@@ -38,11 +38,14 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 The status line under the prompt shows your level, XP and streak.
 
+To play without waiting for Claude, run `/math play`. A small practice pane opens with the first question already showing and the answer box ready for typing. Press Esc or **stop** to end the run.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `/math` | Opens the stats pane: level, XP over the last 14 days, each skill's rating and trend, and achievements. Esc closes it. |
+| `/math play` | Opens a practice pane so you can play any time, even while Claude is idle. Esc stops. |
 | `/math stats` | Prints the same stats as text. |
 | `/math pause` | Stops showing questions, in every session, until you resume. |
 | `/math resume` | Turns questions back on. |

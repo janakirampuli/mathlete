@@ -25,6 +25,7 @@ function engine(on: On, profile?: object) {
   const toasts: string[] = []
   const sounds: string[] = []
   const panes: string[] = []
+  const closed: string[] = []
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
@@ -33,11 +34,12 @@ function engine(on: On, profile?: object) {
   on('audio.play', ($, e) => (sounds.push('asset' in e.clip ? String(e.clip.asset) : '?'), { value: undefined }))
   on('ui.open', ($, e) => (panes.push(e.id), { value: { isPlaced: true as const } }))
   on('ui.focus', () => ({}))
+  on('ui.close', ($, e) => (closed.push(e.id), { value: undefined }))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
-  return { status, toasts, sounds, panes, clock: mock.clock(on, { now: new Date(2026, 9, 16, 12).getTime() }) }
+  return { status, toasts, sounds, panes, closed, clock: mock.clock(on, { now: new Date(2026, 9, 16, 12).getTime() }) }
 }
 
 const solve = (label: string) => {
@@ -287,4 +289,55 @@ test('a time limit of 0 turns the countdown and the timeout off', { options: { t
   await clock.advance(120000)
   await ui.input({ key: 'answer', text: String(answer) })
   expect((await ui.find({ type: 'Text', text: /✓/ }))?.text).toContain('(120.0s)')
+})
+
+const PLAY = { ...PANE, requestId: 'mathlete-play', props: { ...PANE.props, title: 'mathlete · practice', placement: 'inline' } } as const
+
+test('/math play opens a practice pane with the question already showing', async ($, on) => {
+  const { panes } = engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect((await $.command.run({ ...MATH, args: 'play' })).text).toBeUndefined()
+  expect(panes).toEqual(['mathlete-play'])
+
+  const pane = await $.ui.mount({ ...PLAY, surface: 'terminal' })
+  const first = await labelOf(pane)
+  expect(first).toMatch(/^\d+ \+ \d+ = $/)
+  expect((await pane.find({ type: 'Text', text: /This run/ }))?.text).toContain('This run 0/0')
+
+  // The band stays out of the way while the pane is up, even mid-turn.
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'answer' })).toBeUndefined()
+
+  await pane.input({ key: 'answer', text: String(solve(first)) })
+  expect(await pane.find({ type: 'Text', text: /✓/ })).toBeDefined()
+  expect((await pane.find({ type: 'Text', text: /This run/ }))?.text).toContain('This run 1/1')
+  expect(await labelOf(pane)).toMatch(/ = $/)
+})
+
+test('closing practice with an untouched question puts it back hidden, uncounted', async ($, on) => {
+  engine(on)
+  await start($)
+  await $.command.run({ ...MATH, args: 'play' })
+  const pane = await $.ui.mount({ ...PLAY, surface: 'terminal' })
+  await pane.input({ key: 'answer', text: String(solve(await labelOf(pane))) })
+
+  await pane.press({ key: 'stop' })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await labelOf(band)).toMatch(/^★+☆+ ▸ $/)
+  expect((await $.command.run({ ...MATH, args: 'stats' })).text).toContain('Solved 1 of 1')
+})
+
+test('walking away from practice ends it after the time limit', async ($, on) => {
+  const { clock, closed } = engine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run({ ...MATH, args: 'play' })
+  await clock.advance(20000)
+  expect(closed).toEqual(['mathlete-play'])
+  expect((await $.command.run({ ...MATH, args: 'stats' })).text).toContain('Solved 0 of 0')
+
+  // Practice is over, so the band is back for the next turn.
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await labelOf(band)).toMatch(/^★+☆+ ▸ $/)
 })

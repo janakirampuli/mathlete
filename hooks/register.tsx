@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import type { Feedback, Profile, Question } from '../types'
 import { ACHIEVEMENTS } from './achievements'
@@ -26,6 +26,9 @@ import {
 import { SKILLS, skillById } from './skills'
 
 const PANE = 'mathlete'
+const PLAY = 'mathlete-play'
+
+type QuizElements = Pick<Elements['terminal'], 'Box' | 'Button' | 'Input' | 'Text'>
 
 const question = atom({ plugin: 'mathlete', key: 'question' } as const, null)
 const feedback = atom({ plugin: 'mathlete', key: 'feedback' } as const, null)
@@ -35,6 +38,8 @@ const isPaused = atom({ plugin: 'mathlete', key: 'isPaused' } as const, false)
 const currentTurn = atom({ plugin: 'mathlete', key: 'currentTurn' } as const, null)
 const armedTurn = atom({ plugin: 'mathlete', key: 'armedTurn' } as const, null)
 const clock = atom({ plugin: 'mathlete', key: 'clock' } as const, 0)
+const isPlaying = atom({ plugin: 'mathlete', key: 'isPlaying' } as const, false)
+const run_ = atom({ plugin: 'mathlete', key: 'run' } as const, { solved: 0, attempted: 0 })
 
 // Seconds a revealed question has before it times out: the setting, stretched
 // for questions whose target time is long; 0 turns the limit off.
@@ -61,6 +66,35 @@ async function reveal($: EngineInterface) {
   const now = await $.clock.now()
   await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now, auto: false } : cur))
   await update($, clock, () => now)
+}
+
+// /math play: practice on demand in a focused pane, the first question shown
+// at once. Esc closes it.
+async function play_($: EngineInterface) {
+  await update($, isPlaying, () => true)
+  await update($, run_, () => ({ solved: 0, attempted: 0 }))
+  await update($, feedback, () => null)
+  const q = await read($, question)
+  if (!q || q.startedAt === null) await freshQuestion($, true)
+
+  const opened = await $.ui.open({ id: PLAY, title: 'mathlete · practice', focus: true, closeOnEscape: true, rows: 5 })
+  if (opened.isPlaced) return {}
+  await update($, isPlaying, () => false)
+  return { text: `🧮 Couldn't open the practice pane: ${opened.reason}` }
+}
+
+// Ends a practice run, however the pane closed. An untouched question that
+// showed itself goes back to hidden without counting, as when walking away.
+async function endPractice($: EngineInterface) {
+  if (!(await read($, isPlaying))) return
+  await update($, isPlaying, () => false)
+  const q = await read($, question)
+  if (q && q.startedAt !== null && (await read($, draft)) === '') await freshQuestion($)
+}
+
+async function stopPractice($: EngineInterface) {
+  await endPractice($)
+  await $.ui.close({ id: PLAY })
 }
 
 async function setPaused($: EngineInterface, paused: boolean) {
@@ -100,6 +134,7 @@ async function timeOut($: EngineInterface, q: Question, now: number, hasSound: b
   if (q.auto && (await read($, draft)) === '') {
     await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏸ ${q.prompt} = ${q.answer} went unanswered; not counted` }))
     await freshQuestion($)
+    if (await read($, isPlaying)) await stopPractice($)
     return
   }
 
@@ -125,6 +160,9 @@ async function record($: EngineInterface, q: Question, given: number, seconds: n
   const result = grade(await loadProfile($), q, given, seconds, now)
   await $.store.set('profile', result.profile)
   await update($, profile, () => result.profile)
+  if (await read($, isPlaying)) {
+    await update($, run_, r => ({ solved: r.solved + (result.isCorrect ? 1 : 0), attempted: r.attempted + 1 }))
+  }
 
   for (const a of result.earned) $.ui.toast(`🏆 ${a.name}: ${a.description}`)
   if (result.leveledUp) {
@@ -138,6 +176,57 @@ async function record($: EngineInterface, q: Question, given: number, seconds: n
   $.ui.status(statusLine(result.profile))
 
   return result
+}
+
+// The question as the band and the practice pane both draw it: level and XP,
+// the answer box with skip and countdown, and how the last answer went.
+async function quiz($: EngineInterface, els: QuizElements, q: Question, columns: number, timeLimit: number, hasSound: boolean) {
+  const { Box, Button, Input, Text } = els
+  const p = await read($, profile)
+  const fb = await read($, feedback)
+  const value = await read($, draft)
+  const { level, into, span } = levelProgress(p)
+  const barWidth = Math.max(5, Math.min(20, columns - 50))
+  const skill = skillById(q.skill)
+  const isRevealed = q.startedAt !== null
+  const label = !isRevealed
+    ? `${stars(q.step, skill.steps.length)} ▸ `
+    : q.prompt.includes('?')
+      ? `${q.prompt}  `
+      : `${q.prompt} = `
+  const limit = limitFor(q, timeLimit)
+  const left = q.startedAt === null || limit === Infinity ? null : Math.max(0, Math.ceil(limit - ((await read($, clock)) - q.startedAt) / 1000))
+
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text bold>🧮 Lv {level} </Text>
+        <Text dimColor>
+          {progressBar(p, barWidth)} {into}/{span} XP
+          {p.streak > 0 ? `  🔥 ${p.streak}` : ''}  · {skill.name}
+        </Text>
+      </Box>
+      <Box>
+        <Input
+          key="answer"
+          label={label}
+          placeholder={isRevealed ? 'answer' : 'ctrl+x tab to reveal'}
+          submitLabel="check"
+          value={value}
+          autoFocus
+          onInput={async text => {
+            await update($, draft, () => text)
+            await reveal($)
+          }}
+          onSubmit={text => answer($, text, hasSound)}
+        />
+        <Text> </Text>
+        <Button key="skip" label="skip" onPress={() => freshQuestion($, isRevealed)} />
+        {left !== null && <Text color={left <= 5 ? 'red' : undefined} dimColor={left > 5}>  ⏱ {left}s</Text>}
+      </Box>
+      {fb && <Text color={fb.isCorrect ? 'green' : 'red'}>{fb.text}</Text>}
+    </Box>
+  )
 }
 
 export const register: Register = (on, options) => {
@@ -161,7 +250,7 @@ export const register: Register = (on, options) => {
     // the question out when its limit has passed.
     $.clock.every(1000, () => void tick($, timeLimit, hasSound))
 
-    await $.command.register({ name: 'math', description: 'mathlete stats pane; /math stats, /math pause, /math resume, /math reset' })
+    await $.command.register({ name: 'math', description: 'mathlete stats pane; /math play, /math stats, /math pause, /math resume, /math reset' })
 
     return next(e)
   })
@@ -176,6 +265,7 @@ export const register: Register = (on, options) => {
       await setPaused($, false)
       return { text: '🧮 Back on. Questions show while Claude works.' }
     }
+    if (arg === 'play') return play_($)
     if (arg === 'reset') {
       return { text: '🧮 This wipes all mathlete progress: XP, level, ratings, streaks, achievements and history. Type /math reset yes to do it.' }
     }
@@ -213,6 +303,13 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // The person's Esc or close mark on the practice pane.
+  on('ui.close', { id: PLAY }, async ($, e, next) => {
+    await endPractice($)
+
+    return next(e)
+  })
+
   on('ui.focus', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.plugin === 'mathlete' && e.element === 'answer') await reveal($)
 
@@ -220,7 +317,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || e.surface === 'mobile' || (await read($, isPaused))) return next(e)
+    if (e.props.hasSurvey || e.surface === 'mobile' || (await read($, isPaused)) || (await read($, isPlaying))) return next(e)
 
     const q = await read($, question)
     if (!q) return next(e)
@@ -228,50 +325,29 @@ export const register: Register = (on, options) => {
     const isArmed = (await read($, armedTurn)) === (await read($, currentTurn))
     if (q.startedAt === null && !(e.props.isWorking && isArmed)) return next(e)
 
-    const p = await read($, profile)
-    const fb = await read($, feedback)
-    const value = await read($, draft)
-    const { level, into, span } = levelProgress(p)
-    const { Box, Button, Input, Text } = $.ui.resolve(e)
-    const barWidth = Math.max(5, Math.min(20, e.props.bodyColumns - 50))
-    const skill = skillById(q.skill)
-    const isRevealed = q.startedAt !== null
-    const label = !isRevealed
-      ? `${stars(q.step, skill.steps.length)} ▸ `
-      : q.prompt.includes('?')
-        ? `${q.prompt}  `
-        : `${q.prompt} = `
-    const limit = limitFor(q, timeLimit)
-    const left = q.startedAt === null || limit === Infinity ? null : Math.max(0, Math.ceil(limit - ((await read($, clock)) - q.startedAt) / 1000))
+    return quiz($, $.ui.resolve(e), q, e.props.bodyColumns, timeLimit, hasSound)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PLAY }, async ($, e) => {
+    if (e.surface === 'mobile') {
+      const { Text } = $.ui.resolve(e)
+      return <Text dimColor>Practice needs a keyboard.</Text>
+    }
+    const els = $.ui.resolve(e)
+    const { Box, Button, Text } = els
+    const q = await read($, question)
+    const run = await read($, run_)
+    if (!q) return <Text dimColor>No question yet.</Text>
 
     return (
       <Box flexDirection="column">
+        {await quiz($, els, q, e.props.bodyColumns, timeLimit, hasSound)}
         <Box>
-          <Text bold>🧮 Lv {level} </Text>
+          <Button key="stop" label="stop" role="dismiss" onPress={() => stopPractice($)} />
           <Text dimColor>
-            {progressBar(p, barWidth)} {into}/{span} XP
-            {p.streak > 0 ? `  🔥 ${p.streak}` : ''}  · {skill.name}
+            {'  '}This run {run.solved}/{run.attempted} · Esc stops
           </Text>
         </Box>
-        <Box>
-          <Input
-            key="answer"
-            label={label}
-            placeholder={isRevealed ? 'answer' : 'ctrl+x tab to reveal'}
-            submitLabel="check"
-            value={value}
-            autoFocus
-            onInput={async text => {
-              await update($, draft, () => text)
-              await reveal($)
-            }}
-            onSubmit={text => answer($, text, hasSound)}
-          />
-          <Text> </Text>
-          <Button key="skip" label="skip" onPress={() => freshQuestion($, isRevealed)} />
-          {left !== null && <Text color={left <= 5 ? 'red' : undefined} dimColor={left > 5}>  ⏱ {left}s</Text>}
-        </Box>
-        {fb && <Text color={fb.isCorrect ? 'green' : 'red'}>{fb.text}</Text>}
       </Box>
     )
   })

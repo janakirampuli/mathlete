@@ -49,6 +49,9 @@ declare module 'claude-code' {
       armedTurn: string | null
       // The time the countdown draws from, ticked once a second while a question is revealed.
       clock: number
+      // Whether the /math play pane is open, and how this run of it went.
+      isPlaying: boolean
+      run: { solved: number; attempted: number }
     }
   }
 }
