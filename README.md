@@ -32,9 +32,10 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 1. Send Claude any prompt. While it works, a question appears above the prompt.
 2. The band shows only the skill and its difficulty. Press **ctrl+x tab** (or click the band) to reveal the question. The clock starts when it is revealed.
-3. Type the answer and press Enter. The next question shows right away, so you can keep solving one after another.
+3. Type the answer and press Enter. After a right answer the next question shows right away, so you can keep solving one after another.
 4. Each revealed question has 20 seconds, with a countdown in the band. Running out counts as a miss. Questions with a long target time get 1.5 times that target instead.
-5. Press **Esc** to go back to your prompt. If you walk away from a run, the question that showed itself after your last answer times out without counting, and the next one waits hidden again.
+5. After a miss or a timeout you see the answer and a 💡 tip on how to work it out in your head. The next question waits until you press Enter, so the clock does not run while you read.
+6. Press **Esc** to go back to your prompt. If you walk away from a run, the question that showed itself after your last answer times out without counting, and the next one waits hidden again.
 
 The status line under the prompt shows your level, XP and streak.
 
@@ -81,6 +82,17 @@ Each skill unlocks at a level and has several difficulty steps.
 
 There are 17 achievements, from your first right answer to a 30-day streak.
 
+## Mental math tips
+
+Every question carries a tip built from its own numbers, shown after a miss. For example:
+
+```
+⏱ Time's up: 89 × 17 = 1513
+💡 round and adjust: 89 × 17 = 90 × 17 − 1 × 17 = 1530 − 17 = 1513
+```
+
+Each skill has its own techniques: make 10, round and adjust, add or take away by place value, split a factor, the ×11, ×25, ×99, ×125 and ×999 tricks, squares as (a ± b)², squares of numbers ending in 5, percentages built from 10% and 1%, difference of squares, chunked division, and last-digit tricks for square and cube roots. The tests check every equals sign in thousands of generated tips.
+
 ## Settings
 
 Change these in `/config`:
@@ -100,6 +112,7 @@ The plugin is a Claude Code hooks module written in TypeScript:
 - `hooks/register.tsx` draws the band and the stats pane, and handles `/math` and the turn hooks.
 - `hooks/skills.ts` has the question generators.
 - `hooks/math.ts` has ratings, XP, levels and streaks.
+- `hooks/tips.ts` builds the mental math tip for each question.
 - `hooks/achievements.ts` has the achievement list.
 - `types/index.d.ts` declares the session state.
 

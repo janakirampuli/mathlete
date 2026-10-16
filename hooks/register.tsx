@@ -110,6 +110,11 @@ function play($: EngineInterface, asset: string, hasSound: boolean) {
 async function answer($: EngineInterface, text: string, hasSound: boolean) {
   const q = await read($, question)
   if (!q) return
+  // Enter on a hidden question shows it: the way on after reading a tip.
+  if (q.startedAt === null) {
+    await reveal($)
+    return
+  }
 
   const given = parseAnswer(text)
   if (given === null) {
@@ -123,24 +128,25 @@ async function answer($: EngineInterface, text: string, hasSound: boolean) {
   const text_ = isCorrect
     ? `✓ ${q.prompt} = ${q.answer}  +${gained} XP (${seconds.toFixed(1)}s)`
     : `✗ ${q.prompt} = ${q.answer}, not ${given}`
-  await update($, feedback, (): Feedback => ({ isCorrect, text: text_ }))
+  await update($, feedback, (): Feedback => ({ isCorrect, text: text_, tip: isCorrect ? undefined : q.tip }))
 
-  await freshQuestion($, true)
+  // After a miss the next question waits, so the tip can be read off the clock.
+  await freshQuestion($, isCorrect)
 }
 
 // Out of time: a miss, unless the question revealed itself and the person
 // never typed, which means they stepped away; then the run stops quietly.
 async function timeOut($: EngineInterface, q: Question, now: number, hasSound: boolean) {
   if (q.auto && (await read($, draft)) === '') {
-    await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏸ ${q.prompt} = ${q.answer} went unanswered; not counted` }))
+    await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏸ ${q.prompt} = ${q.answer} went unanswered; not counted`, tip: q.tip }))
     await freshQuestion($)
     if (await read($, isPlaying)) await stopPractice($)
     return
   }
 
   await record($, q, NaN, (now - (q.startedAt ?? now)) / 1000, now, hasSound)
-  await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏱ Time's up: ${q.prompt} = ${q.answer}` }))
-  await freshQuestion($, true)
+  await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏱ Time's up: ${q.prompt} = ${q.answer}`, tip: q.tip }))
+  await freshQuestion($)
 }
 
 // Once a second: move the countdown of a revealed question, and time it out
@@ -210,7 +216,7 @@ async function quiz($: EngineInterface, els: QuizElements, q: Question, columns:
         <Input
           key="answer"
           label={label}
-          placeholder={isRevealed ? 'answer' : 'ctrl+x tab to reveal'}
+          placeholder={isRevealed ? 'answer' : fb && !fb.isCorrect ? 'Enter for the next one' : 'ctrl+x tab to reveal'}
           submitLabel="check"
           value={value}
           autoFocus
@@ -225,6 +231,7 @@ async function quiz($: EngineInterface, els: QuizElements, q: Question, columns:
         {left !== null && <Text color={left <= 5 ? 'red' : undefined} dimColor={left > 5}>  ⏱ {left}s</Text>}
       </Box>
       {fb && <Text color={fb.isCorrect ? 'green' : 'red'}>{fb.text}</Text>}
+      {fb?.tip && <Text dimColor>💡 {fb.tip}</Text>}
     </Box>
   )
 }

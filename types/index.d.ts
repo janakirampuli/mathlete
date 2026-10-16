@@ -8,9 +8,11 @@ export type Question = {
   startedAt: number | null
   // Revealed by itself after the last answer, not by the person focusing the band.
   auto?: boolean
+  // How to work it out in your head, shown after a miss.
+  tip?: string
 }
 
-export type Feedback = { isCorrect: boolean; text: string }
+export type Feedback = { isCorrect: boolean; text: string; tip?: string }
 
 export type SkillRecord = { rating: number; solved: number; attempted: number }
 

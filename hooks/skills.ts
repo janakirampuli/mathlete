@@ -1,6 +1,30 @@
 export type Rng = () => number
 
-export type Made = { prompt: string; answer: number }
+import {
+  tipAdd,
+  tipAdd3,
+  tipCubeRoot,
+  tipDifferenceOfSquares,
+  tipDiv,
+  tipFractionOf,
+  tipFractionOfFraction,
+  tipFractionSum,
+  tipMod,
+  tipMul,
+  tipPercentChange,
+  tipPercentIs,
+  tipPercentOf,
+  tipPower,
+  tipPowerOfTwo,
+  tipProducts,
+  tipSquare,
+  tipSquareRoot,
+  tipSub,
+  tipThreeProduct,
+} from './tips'
+
+// `tip` says how to work it out in your head; shown after a miss.
+export type Made = { prompt: string; answer: number; tip?: string }
 
 export type Skill = {
   id: string
@@ -15,15 +39,19 @@ export const int = (rng: Rng, lo: number, hi: number) => lo + Math.floor(rng() *
 const pick = <T>(rng: Rng, xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)]!
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
 
-const add = (a: number, b: number): Made => ({ prompt: `${a} + ${b}`, answer: a + b })
-const sub = (a: number, b: number): Made => ({ prompt: `${a} − ${b}`, answer: a - b })
-const mul = (a: number, b: number): Made => ({ prompt: `${a} × ${b}`, answer: a * b })
-const div = (b: number, q: number): Made => ({ prompt: `${b * q} ÷ ${b}`, answer: q })
-const pow = (b: number, n: number): Made => ({ prompt: n === 2 ? `${b}²` : n === 3 ? `${b}³` : `${b}^${n}`, answer: b ** n })
-const mod = (a: number, b: number): Made => ({ prompt: `${a} mod ${b}`, answer: a % b })
+const add = (a: number, b: number): Made => ({ prompt: `${a} + ${b}`, answer: a + b, tip: tipAdd(a, b) })
+const sub = (a: number, b: number): Made => ({ prompt: `${a} − ${b}`, answer: a - b, tip: tipSub(a, b) })
+const mul = (a: number, b: number): Made => ({ prompt: `${a} × ${b}`, answer: a * b, tip: tipMul(a, b) })
+const div = (b: number, q: number): Made => ({ prompt: `${b * q} ÷ ${b}`, answer: q, tip: tipDiv(b, q) })
+const pow = (b: number, n: number): Made => ({
+  prompt: n === 2 ? `${b}²` : n === 3 ? `${b}³` : `${b}^${n}`,
+  answer: b ** n,
+  tip: n === 2 ? tipSquare(b) : b === 2 ? tipPowerOfTwo(n) : tipPower(b, n),
+})
+const mod = (a: number, b: number): Made => ({ prompt: `${a} mod ${b}`, answer: a % b, tip: tipMod(a, b) })
 // a/b of n, with n a multiple of b so the answer is whole.
-const fracOf = (a: number, b: number, k: number): Made => ({ prompt: `${a}/${b} of ${b * k}`, answer: a * k })
-const pctOf = (p: number, n: number): Made => ({ prompt: `${p}% of ${n}`, answer: (p * n) / 100 })
+const fracOf = (a: number, b: number, k: number): Made => ({ prompt: `${a}/${b} of ${b * k}`, answer: a * k, tip: tipFractionOf(a, b, b * k) })
+const pctOf = (p: number, n: number): Made => ({ prompt: `${p}% of ${n}`, answer: (p * n) / 100, tip: tipPercentOf(p, n) })
 
 export const SKILLS: Skill[] = [
   {
@@ -44,7 +72,7 @@ export const SKILLS: Skill[] = [
         targetSeconds: 18,
         make: r => {
           const a = int(r, 101, 999), b = int(r, 101, 999), c = int(r, 101, 999)
-          return { prompt: `${a} + ${b} + ${c}`, answer: a + b + c }
+          return { prompt: `${a} + ${b} + ${c}`, answer: a + b + c, tip: tipAdd3(a, b, c) }
         },
       },
     ],
@@ -130,14 +158,14 @@ export const SKILLS: Skill[] = [
         targetSeconds: 15,
         make: r => {
           const p = 5 * int(r, 1, 19), b = 20 * int(r, 3, 45)
-          return { prompt: `${(p * b) / 100} is ?% of ${b}`, answer: p }
+          return { prompt: `${(p * b) / 100} is ?% of ${b}`, answer: p, tip: tipPercentIs((p * b) / 100, b, p) }
         },
       },
       {
         targetSeconds: 18,
         make: r => {
           const p = 5 * int(r, 1, 19), a = 20 * int(r, 3, 45)
-          return { prompt: `${a} → ${a + (p * a) / 100} is +?%`, answer: p }
+          return { prompt: `${a} → ${a + (p * a) / 100} is +?%`, answer: p, tip: tipPercentChange(a, a + (p * a) / 100, p) }
         },
       },
     ],
@@ -148,18 +176,18 @@ export const SKILLS: Skill[] = [
     unlockLevel: 8,
     tier: 4,
     steps: [
-      { targetSeconds: 6, make: r => { const a = int(r, 5, 30), b = int(r, 2, 20), c = int(r, 1, a + b - 1); return { prompt: `${a} + ${b} − ${c}`, answer: a + b - c } } },
-      { targetSeconds: 8, make: r => { const a = int(r, 3, 12), b = int(r, 3, 12), c = int(r, 2, 30); return { prompt: `${a} × ${b} + ${c}`, answer: a * b + c } } },
-      { targetSeconds: 10, make: r => { const a = int(r, 6, 12), b = int(r, 6, 12), c = int(r, 2, 9), d = int(r, 2, 5); return { prompt: `${a} × ${b} − ${c} × ${d}`, answer: a * b - c * d } } },
-      { targetSeconds: 14, make: r => { const a = int(r, 11, 30), b = int(r, 3, 9), c = int(r, 2, 9), d = int(r, 2, 9); return { prompt: `${a} × ${b} + ${c} × ${d}`, answer: a * b + c * d } } },
-      { targetSeconds: 14, make: r => { const a = int(r, 11, 49), b = int(r, 11, 49), c = int(r, 3, 9); return { prompt: `(${a} + ${b}) × ${c}`, answer: (a + b) * c } } },
-      { targetSeconds: 14, make: r => { const a = int(r, 3, 12), b = int(r, 3, 12), c = int(r, 3, 12); return { prompt: `${a} × ${b} × ${c}`, answer: a * b * c } } },
-      { targetSeconds: 15, make: r => { const a = int(r, 31, 99), b = int(r, 11, a - 1); return { prompt: `${a}² − ${b}²`, answer: a * a - b * b } } },
+      { targetSeconds: 6, make: r => { const a = int(r, 5, 30), b = int(r, 2, 20), c = int(r, 1, a + b - 1); return { prompt: `${a} + ${b} − ${c}`, answer: a + b - c, tip: `left to right: ${a} + ${b} = ${a + b}, ${a + b} − ${c} = ${a + b - c}` } } },
+      { targetSeconds: 8, make: r => { const a = int(r, 3, 12), b = int(r, 3, 12), c = int(r, 2, 30); return { prompt: `${a} × ${b} + ${c}`, answer: a * b + c, tip: `product first: ${a} × ${b} = ${a * b}, ${a * b} + ${c} = ${a * b + c}` } } },
+      { targetSeconds: 10, make: r => { const a = int(r, 6, 12), b = int(r, 6, 12), c = int(r, 2, 9), d = int(r, 2, 5); return { prompt: `${a} × ${b} − ${c} × ${d}`, answer: a * b - c * d, tip: tipProducts([[a, b, '+'], [c, d, '−']]) } } },
+      { targetSeconds: 14, make: r => { const a = int(r, 11, 30), b = int(r, 3, 9), c = int(r, 2, 9), d = int(r, 2, 9); return { prompt: `${a} × ${b} + ${c} × ${d}`, answer: a * b + c * d, tip: tipProducts([[a, b, '+'], [c, d, '+']]) } } },
+      { targetSeconds: 14, make: r => { const a = int(r, 11, 49), b = int(r, 11, 49), c = int(r, 3, 9); return { prompt: `(${a} + ${b}) × ${c}`, answer: (a + b) * c, tip: `brackets first: ${a} + ${b} = ${a + b}; ${tipMul(a + b, c) ?? `${a + b} × ${c} = ${(a + b) * c}`}` } } },
+      { targetSeconds: 14, make: r => { const a = int(r, 3, 12), b = int(r, 3, 12), c = int(r, 3, 12); return { prompt: `${a} × ${b} × ${c}`, answer: a * b * c, tip: tipThreeProduct(a, b, c) } } },
+      { targetSeconds: 15, make: r => { const a = int(r, 31, 99), b = int(r, 11, a - 1); return { prompt: `${a}² − ${b}²`, answer: a * a - b * b, tip: tipDifferenceOfSquares(a, b) } } },
       {
         targetSeconds: 22,
         make: r => {
           const a = int(r, 11, 30), b = int(r, 4, 9), c = int(r, 11, 30), d = int(r, 4, 9), e = int(r, 2, 9), f = int(r, 2, 9)
-          return { prompt: `${a} × ${b} + ${c} × ${d} − ${e} × ${f}`, answer: a * b + c * d - e * f }
+          return { prompt: `${a} × ${b} + ${c} × ${d} − ${e} × ${f}`, answer: a * b + c * d - e * f, tip: tipProducts([[a, b, '+'], [c, d, '+'], [e, f, '−']]) }
         },
       },
     ],
@@ -175,8 +203,8 @@ export const SKILLS: Skill[] = [
       { targetSeconds: 8, make: r => { const b = pick(r, [3, 5]); return pow(b, int(r, 2, b === 3 ? 6 : 4)) } },
       { targetSeconds: 10, make: r => pow(2, int(r, 11, 16)) },
       { targetSeconds: 12, make: r => pow(int(r, 7, 12), 3) },
-      { targetSeconds: 12, make: r => { const n = int(r, 11, 99); return { prompt: `√${n * n}`, answer: n } } },
-      { targetSeconds: 14, make: r => { const n = int(r, 5, 25); return { prompt: `∛${n ** 3}`, answer: n } } },
+      { targetSeconds: 12, make: r => { const n = int(r, 11, 99); return { prompt: `√${n * n}`, answer: n, tip: tipSquareRoot(n) } } },
+      { targetSeconds: 14, make: r => { const n = int(r, 5, 25); return { prompt: `∛${n ** 3}`, answer: n, tip: tipCubeRoot(n) } } },
       { targetSeconds: 18, make: r => pow(int(r, 6, 9), int(r, 3, 4)) },
     ],
   },
@@ -216,7 +244,7 @@ export const SKILLS: Skill[] = [
           const [b, d] = pick(r, [[4, 6], [6, 8], [8, 12], [6, 9], [10, 15], [9, 12]] as const)
           const l = (b * d) / gcd(b, d)
           const a = int(r, 1, b - 1), c = int(r, 1, d - 1)
-          return { prompt: `${a}/${b} + ${c}/${d} = ?/${l}`, answer: (a * l) / b + (c * l) / d }
+          return { prompt: `${a}/${b} + ${c}/${d} = ?/${l}`, answer: (a * l) / b + (c * l) / d, tip: tipFractionSum(a, b, c, d, l) }
         },
       },
       {
@@ -225,7 +253,7 @@ export const SKILLS: Skill[] = [
           const [a, b] = pick(r, [[1, 2], [2, 3], [3, 4], [3, 5]] as const)
           const [c, d] = pick(r, [[1, 3], [2, 5], [3, 8], [5, 6]] as const)
           const k = int(r, 2, 12)
-          return { prompt: `${a}/${b} of ${c}/${d} of ${b * d * k}`, answer: a * c * k }
+          return { prompt: `${a}/${b} of ${c}/${d} of ${b * d * k}`, answer: a * c * k, tip: tipFractionOfFraction(a, b, c, d, b * d * k) }
         },
       },
     ],

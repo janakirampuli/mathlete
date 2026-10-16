@@ -115,9 +115,9 @@ export function nextQuestion(profile: Profile, rng: Rng, previous?: Question | n
     const skill = chooseSkill(profile, rng, previous?.skill)
     const step = chooseStep(skill, effectiveRating(profile, skill), rng)
     const { targetSeconds, make } = skill.steps[step]!
-    const { prompt, answer } = make(rng)
+    const { prompt, answer, tip } = make(rng)
     if (prompt !== previous?.prompt || tries >= 5) {
-      return { skill: skill.id, step, prompt, answer, targetSeconds, startedAt: null }
+      return { skill: skill.id, step, prompt, answer, targetSeconds, startedAt: null, ...(tip ? { tip } : {}) }
     }
   }
 }

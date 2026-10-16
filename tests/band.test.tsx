@@ -250,6 +250,13 @@ test('running out of time counts as a miss and moves on', async ($, on) => {
   await clock.advance(1000)
 
   expect((await ui.find({ type: 'Text', text: /Time's up/ }))?.text).toContain(`= ${answer}`)
+
+  // The next one waits off the clock, so the tip can be read; Enter shows it.
+  expect(await labelOf(ui)).toMatch(/^★+☆+ ▸ $/)
+  expect((await ui.find({ key: 'answer' }))?.props.placeholder).toBe('Enter for the next one')
+  await clock.advance(60000)
+  await ui.input({ key: 'answer', text: '' })
+  expect(await labelOf(ui)).toMatch(/ = $/)
   expect((await ui.find({ type: 'Text', text: /⏱ \d+s/ }))?.text).toContain('⏱ 20s')
   const stats = (await $.command.run({ ...MATH, args: 'stats' })).text
   expect(stats).toContain('Solved 4 of 5')
