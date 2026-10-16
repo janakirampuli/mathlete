@@ -13,11 +13,11 @@ const START_RATING = 1000
 const STEP_RATING = (step: number) => 800 + 120 * step
 const TARGET_GAP = 150 // rating − question rating where P(correct) ≈ 0.7
 
-// Past level 5 each level lifts every skill's rating floor, so a high level
-// never gets easy questions however few answers a skill has had. A skill
-// unlocked late starts its climb from its own unlock level.
-const FLOOR_FREE_LEVELS = 5
-const FLOOR_PER_LEVEL = 70
+// Past the warm-up levels each level lifts every skill's rating floor, so a
+// high level never gets easy questions however few answers a skill has had,
+// and a skill unlocked late starts at the level's difficulty.
+const FLOOR_FREE_LEVELS = 3
+const FLOOR_PER_LEVEL = 100
 
 export const EMPTY_PROFILE: Profile = {
   xp: 0,
@@ -73,12 +73,11 @@ export const unlockedSkills = (level: number) => SKILLS.filter(s => s.unlockLeve
 export const skillRecord = (profile: Profile, id: string): SkillRecord =>
   profile.skills[id] ?? { rating: START_RATING, solved: 0, attempted: 0 }
 
-export const levelFloor = (level: number, skill: Skill) =>
-  START_RATING + FLOOR_PER_LEVEL * Math.max(0, level - Math.max(FLOOR_FREE_LEVELS, skill.unlockLevel))
+export const levelFloor = (level: number) => START_RATING + FLOOR_PER_LEVEL * Math.max(0, level - FLOOR_FREE_LEVELS)
 
 // The rating questions are picked by: the skill's own, or the level's floor.
 export const effectiveRating = (profile: Profile, skill: Skill) =>
-  Math.max(skillRecord(profile, skill.id).rating, levelFloor(levelFor(profile.xp), skill))
+  Math.max(skillRecord(profile, skill.id).rating, levelFloor(levelFor(profile.xp)))
 
 export const expected = (rating: number, questionRating: number) =>
   1 / (1 + 10 ** ((questionRating - rating) / 400))
@@ -88,7 +87,7 @@ export const expected = (rating: number, questionRating: number) =>
 export function chooseSkill(profile: Profile, rng: Rng, previous?: string): Skill {
   const level = levelFor(profile.xp)
   const weighted = unlockedSkills(level).map(skill => {
-    const aboveFloor = effectiveRating(profile, skill) - levelFloor(level, skill)
+    const aboveFloor = effectiveRating(profile, skill) - levelFloor(level)
     let w = 1 + Math.max(0, (100 - aboveFloor) / 300)
     if (skill.unlockLevel >= level - 1 && skill.unlockLevel > 1) w += 2
     if (skill.id === previous) w *= 0.3

@@ -111,11 +111,12 @@ export const register: Register = (on, options) => {
     await update($, isPaused, () => paused)
     $.ui.status(statusLine(loaded, paused))
 
-    // A question kept in session state from an older version of the mod.
+    // An unrevealed question kept in session state was picked for the profile
+    // as it was, or by an older version of the mod: pick again.
     const q = await read($, question)
-    if (q && typeof (q as { skill?: unknown }).skill !== 'string') await freshQuestion($)
+    if (q && (typeof (q as { skill?: unknown }).skill !== 'string' || q.startedAt === null)) await freshQuestion($)
 
-    await $.command.register({ name: 'math', description: 'mathlete stats pane; /math stats, /math pause, /math resume' })
+    await $.command.register({ name: 'math', description: 'mathlete stats pane; /math stats, /math pause, /math resume, /math reset' })
 
     return next(e)
   })
@@ -129,6 +130,20 @@ export const register: Register = (on, options) => {
     if (arg === 'resume') {
       await setPaused($, false)
       return { text: '🧮 Back on. Questions show while Claude works.' }
+    }
+    if (arg === 'reset') {
+      return { text: '🧮 This wipes all mathlete progress: XP, level, ratings, streaks, achievements and history. Type /math reset yes to do it.' }
+    }
+    if (arg === 'reset yes') {
+      await $.store.delete('profile')
+      await $.store.delete('paused')
+      await update($, profile, () => EMPTY_PROFILE)
+      await update($, isPaused, () => false)
+      await update($, feedback, () => null)
+      await update($, question, () => null)
+      await update($, draft, () => '')
+      $.ui.status(statusLine(EMPTY_PROFILE))
+      return { text: '🧮 Progress wiped. Back to level 1.' }
     }
 
     const loaded = await loadProfile($)

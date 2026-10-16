@@ -158,32 +158,33 @@ test('the hardest step earns Top Shelf, and Blitz when fast', async () => {
   expect(grade(p, hard, 4991, 14, NOON).earned.map(a => a.id)).toEqual(['blitz', 'topshelf'])
 })
 
-test('levels 1 to 5 stay easy, and each level after lifts the difficulty floor', async () => {
+test('levels 1 to 3 are a warm-up, then each level lifts every skill', async () => {
   const rng = seeded(5)
   const steps = (xp: number, skill: string) => {
     const p = { ...EMPTY_PROFILE, xp }
     let sum = 0, n = 0
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 600; i++) {
       const question = nextQuestion(p, rng)
       if (question.skill === skill) (sum += question.step), n++
     }
     return sum / n
   }
-  expect(steps(xpForLevel(5), 'add') < 1).toBe(true)
-  expect(steps(xpForLevel(13), 'add') >= 4).toBe(true)
-  expect(steps(xpForLevel(20), 'add') >= 7).toBe(true)
-  expect(steps(xpForLevel(13), 'mod') < 1).toBe(true)
+  expect(steps(xpForLevel(3), 'add') < 1).toBe(true)
+  expect(steps(xpForLevel(8), 'add') >= 4).toBe(true)
+  expect(steps(xpForLevel(13), 'add') >= 7).toBe(true)
+  // A skill unlocked late starts at the level's difficulty, not its easiest step.
+  expect(steps(xpForLevel(13), 'mod') >= 3.5).toBe(true)
 
   const lv13 = { ...EMPTY_PROFILE, xp: xpForLevel(13) }
-  expect(effectiveRating(lv13, skillById('add'))).toBe(1560)
-  expect(effectiveRating(lv13, skillById('pow'))).toBe(1210)
-  expect(effectiveRating({ ...lv13, skills: { add: { rating: 1700, solved: 50, attempted: 55 } } }, skillById('add'))).toBe(1700)
+  expect(effectiveRating(lv13, skillById('add'))).toBe(2000)
+  expect(effectiveRating(lv13, skillById('mod'))).toBe(2000)
+  expect(effectiveRating({ ...lv13, skills: { add: { rating: 2100, solved: 50, attempted: 55 } } }, skillById('add'))).toBe(2100)
 })
 
 test('a right answer at a level floor lifts the skill rating to the floor', async () => {
   const lv13 = { ...EMPTY_PROFILE, xp: xpForLevel(13) }
   const hard = q({ step: 5, targetSeconds: 10, prompt: '512 + 487', answer: 999 })
-  expect(grade(lv13, hard, 999, 5, NOON).profile.skills.add!.rating > 1560).toBe(true)
+  expect(grade(lv13, hard, 999, 5, NOON).profile.skills.add!.rating > 2000).toBe(true)
 })
 
 test('each answer adds to its day and the rating trend, both capped', async () => {

@@ -195,3 +195,25 @@ test('/math opens the stats pane with skills, history and achievements', async (
     await ui.unmount()
   }
 })
+
+test('/math reset asks first, then wipes every bit of progress', async ($, on) => {
+  const { status } = engine(on, { xp: 10338, streak: 7, bestStreak: 36, solved: 129, attempted: 140, achievements: { first: 'x' } })
+  await start($)
+  await $.command.run({ ...MATH, args: 'pause' })
+  expect(status.at(-1)).toContain('Lv 15')
+
+  expect((await $.command.run({ ...MATH, args: 'reset' })).text).toContain('/math reset yes')
+  expect((await $.command.run({ ...MATH, args: 'stats' })).text).toContain('Level 15')
+
+  expect((await $.command.run({ ...MATH, args: 'reset yes' })).text).toContain('wiped')
+  expect(status.at(-1)).toBe('🧮 Lv 1 · 0/50 XP')
+  const stats = (await $.command.run({ ...MATH, args: 'stats' })).text
+  expect(stats).toContain('Level 1 · Abacus Apprentice')
+  expect(stats).toContain('Solved 0 of 0')
+  expect(stats).toContain('Achievements 0/')
+  expect(stats).not.toContain('paused')
+
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(String((await ui.find({ key: 'answer' }))?.props.label)).toMatch(/^★+☆+ ▸ $/)
+})

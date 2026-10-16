@@ -2,7 +2,7 @@
 
 Mental math for the time you spend waiting on Claude Code.
 
-While Claude works, a question shows up in a band above your prompt. Answer it, earn XP, level up, and unlock harder skills. Levels 1 to 5 are a warm-up. After that every level makes every skill harder, and the questions also adapt to how well you do. Everything is saved on your machine. Nothing is sent anywhere.
+While Claude works, a question shows up in a band above your prompt. Answer it, earn XP, level up, and unlock harder skills. Levels 1 to 3 are a warm-up. After that every level makes every skill harder, and the questions also adapt to how well you do. Everything is saved on your machine. Nothing is sent anywhere.
 
 ```
 🧮 Lv 7 ████████████░░░░ 412/650 XP  🔥 4  · Percentages
@@ -45,6 +45,7 @@ The status line under the prompt shows your level, XP and streak.
 | `/math stats` | Prints the same stats as text. |
 | `/math pause` | Stops showing questions, in every session, until you resume. |
 | `/math resume` | Turns questions back on. |
+| `/math reset` | Wipes all progress and starts over at level 1. It asks you to confirm with `/math reset yes`. |
 
 ## Skills
 
@@ -68,7 +69,7 @@ Each skill unlocks at a level and has several difficulty steps.
 ## How scoring works
 
 - **Difficulty.** Each skill has its own rating that starts at 1000 and works like a chess (Elo) rating. Questions are chosen so you get about 70% right. A fast right answer counts as a full win. A slow right answer counts for a bit less. A wrong answer is a loss.
-- **Level floor.** From level 6, each level raises the lowest rating every skill can have by 70. A skill that unlocks after level 5 starts rising from its own unlock level. So a high level never gets easy questions, even in a skill you have barely played.
+- **Level floor.** From level 4, each level raises the lowest rating every skill can have by 100. This applies to every skill, including one you just unlocked. So a high level never gets easy questions, even in a skill you have barely played, and most skills reach their hardest step by level 13.
 - **Which skill comes next.** Skills you just unlocked and skills you are weak at come up more often. The skill you just did comes up less often.
 - **XP.** A right answer earns `10 × skill tier × (1 + 0.25 × difficulty step)`. Beating the target time can double that, and a streak adds up to 50% more. A wrong answer earns nothing and resets your streak. You never lose XP.
 - **Levels.** Reaching level L takes `50 × (L − 1)²` XP in total.

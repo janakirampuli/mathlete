@@ -1,6 +1,6 @@
 {
   "name": "mathlete",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Mental math questions above the prompt while Claude works: skill tree, adaptive difficulty, XP, levels and achievements",
   "author": {
     "name": "Janaki"
