@@ -28,6 +28,12 @@ claude plugin install mathlete --marketplace janakirampuli/mathlete
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `janakirampuli/mathlete`, then Add plugin.
 
+## Requirements
+
+- A recent Claude Code. mathlete is built on Claude Code's plugin hooks modules, an early-access API that can change between releases. It was built and tested on Claude Code 2.1.299. If the band never shows up, update Claude Code first.
+- The terminal or the desktop app. The band and the practice pane need a keyboard, so the mobile app shows nothing.
+- Sounds play on macOS only.
+
 ## How to play
 
 1. Send Claude any prompt. While it works, a question appears above the prompt.
