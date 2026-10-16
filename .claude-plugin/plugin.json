@@ -1,6 +1,6 @@
 {
   "name": "mathlete",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Mental math questions above the prompt while Claude works: skill tree, adaptive difficulty, XP, levels and achievements",
   "author": {
     "name": "Janaki"
@@ -20,6 +20,12 @@
       "title": "Sounds",
       "description": "Play a chime on level-ups and achievements (macOS)",
       "default": true
+    },
+    "timeLimitSeconds": {
+      "type": "number",
+      "title": "Time limit (seconds)",
+      "description": "Seconds to answer a revealed question before it counts as a miss; longer for questions whose target time is long; 0 turns the limit off",
+      "default": 20
     }
   }
 }

@@ -4,7 +4,10 @@ export type Question = {
   prompt: string
   answer: number
   targetSeconds: number
+  // When the question was revealed and its clock started; null while hidden.
   startedAt: number | null
+  // Revealed by itself after the last answer, not by the person focusing the band.
+  auto?: boolean
 }
 
 export type Feedback = { isCorrect: boolean; text: string }
@@ -44,6 +47,8 @@ declare module 'claude-code' {
       // The main loop's running turn, and the turn whose band delay has passed.
       currentTurn: string | null
       armedTurn: string | null
+      // The time the countdown draws from, ticked once a second while a question is revealed.
+      clock: number
     }
   }
 }

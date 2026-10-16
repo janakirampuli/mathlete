@@ -32,8 +32,9 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 1. Send Claude any prompt. While it works, a question appears above the prompt.
 2. The band shows only the skill and its difficulty. Press **ctrl+x tab** (or click the band) to reveal the question. The clock starts when it is revealed.
-3. Type the answer and press Enter.
-4. Press **Esc** to go back to your prompt. Once a question is revealed, the band stays up after Claude finishes.
+3. Type the answer and press Enter. The next question shows right away, so you can keep solving one after another.
+4. Each revealed question has 20 seconds, with a countdown in the band. Running out counts as a miss. Questions with a long target time get 1.5 times that target instead.
+5. Press **Esc** to go back to your prompt. If you walk away from a run, the question that showed itself after your last answer times out without counting, and the next one waits hidden again.
 
 The status line under the prompt shows your level, XP and streak.
 
@@ -82,6 +83,7 @@ There are 17 achievements, from your first right answer to a 30-day streak.
 Change these in `/config`:
 
 - **Question delay (seconds).** Show a question only after Claude has worked this long. The default is 0, which shows it right away.
+- **Time limit (seconds).** How long a revealed question has before it counts as a miss. The default is 20. Set it to 0 to turn the limit off.
 - **Sounds.** A chime on level-ups and achievements. On by default. Sounds play on macOS only.
 
 ## Where your progress lives

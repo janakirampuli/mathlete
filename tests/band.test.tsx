@@ -217,3 +217,74 @@ test('/math reset asks first, then wipes every bit of progress', async ($, on) =
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(String((await ui.find({ key: 'answer' }))?.props.label)).toMatch(/^★+☆+ ▸ $/)
 })
+
+const labelOf = async (ui: { find: (q: { key: string }) => Promise<{ props: Record<string, unknown> } | undefined> }) =>
+  String((await ui.find({ key: 'answer' }))?.props.label)
+
+test('after an answer the next question shows at once with its clock running', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.input({ key: 'answer', text: String(await focusBand($, ui)) })
+
+  const next = await labelOf(ui)
+  expect(next).toMatch(/^\d+ [+−] \d+ = $/)
+  expect((await ui.find({ type: 'Text', text: /⏱/ }))?.text).toContain('⏱ 20s')
+  await clock.advance(6000)
+  expect((await ui.find({ type: 'Text', text: /⏱/ }))?.text).toContain('⏱ 14s')
+
+  await clock.advance(2500)
+  await ui.input({ key: 'answer', text: String(solve(next)) })
+  expect((await ui.find({ type: 'Text', text: /✓/ }))?.text).toContain('(8.5s)')
+})
+
+test('running out of time counts as a miss and moves on', async ($, on) => {
+  const { clock } = engine(on, { xp: 0, streak: 4, bestStreak: 4, solved: 4, attempted: 4 })
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const answer = await focusBand($, ui)
+  await clock.advance(19000)
+  expect(await ui.find({ type: 'Text', text: /Time's up/ })).toBeUndefined()
+  await clock.advance(1000)
+
+  expect((await ui.find({ type: 'Text', text: /Time's up/ }))?.text).toContain(`= ${answer}`)
+  expect((await ui.find({ type: 'Text', text: /⏱ \d+s/ }))?.text).toContain('⏱ 20s')
+  const stats = (await $.command.run({ ...MATH, args: 'stats' })).text
+  expect(stats).toContain('Solved 4 of 5')
+  expect(stats).toContain('streak 0')
+})
+
+test('a question that revealed itself and was never touched stops the run without counting', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.input({ key: 'answer', text: String(await focusBand($, ui)) })
+  await clock.advance(20000)
+
+  expect((await ui.find({ type: 'Text', text: /not counted/ }))?.text).toContain('went unanswered')
+  expect(await labelOf(ui)).toMatch(/^★+☆+ ▸ $/)
+  expect((await $.command.run({ ...MATH, args: 'stats' })).text).toContain('Solved 1 of 1')
+})
+
+test('typing into a question that revealed itself makes the timeout count', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.input({ key: 'answer', text: String(await focusBand($, ui)) })
+  await ui.input({ key: 'answer', text: '1', kind: 'change' })
+  await clock.advance(20000)
+
+  expect(await ui.find({ type: 'Text', text: /Time's up/ })).toBeDefined()
+  expect((await $.command.run({ ...MATH, args: 'stats' })).text).toContain('Solved 1 of 2')
+})
+
+test('a time limit of 0 turns the countdown and the timeout off', { options: { timeLimitSeconds: 0 } }, async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const answer = await focusBand($, ui)
+  expect(await ui.find({ type: 'Text', text: /⏱/ })).toBeUndefined()
+  await clock.advance(120000)
+  await ui.input({ key: 'answer', text: String(answer) })
+  expect((await ui.find({ type: 'Text', text: /✓/ }))?.text).toContain('(120.0s)')
+})

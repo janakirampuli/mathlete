@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Feedback, Profile } from '../types'
+import type { Feedback, Profile, Question } from '../types'
 import { ACHIEVEMENTS } from './achievements'
 import {
   EMPTY_PROFILE,
@@ -34,23 +34,33 @@ const profile = atom({ plugin: 'mathlete', key: 'profile' } as const, EMPTY_PROF
 const isPaused = atom({ plugin: 'mathlete', key: 'isPaused' } as const, false)
 const currentTurn = atom({ plugin: 'mathlete', key: 'currentTurn' } as const, null)
 const armedTurn = atom({ plugin: 'mathlete', key: 'armedTurn' } as const, null)
+const clock = atom({ plugin: 'mathlete', key: 'clock' } as const, 0)
+
+// Seconds a revealed question has before it times out: the setting, stretched
+// for questions whose target time is long; 0 turns the limit off.
+const limitFor = (q: Question, setting: number) => (setting <= 0 ? Infinity : Math.max(setting, Math.ceil(q.targetSeconds * 1.5)))
 
 async function loadProfile($: EngineInterface): Promise<Profile> {
   return normalizeProfile(await $.store.get('profile'))
 }
 
-async function freshQuestion($: EngineInterface) {
+// The next question: hidden until the band is focused, or, while the person
+// is solving one after another, revealed at once with its clock running.
+async function freshQuestion($: EngineInterface, isSolving = false) {
   const previous = await read($, question)
   const p = await read($, profile)
-  await update($, question, () => nextQuestion(p, Math.random, previous))
+  const startedAt = isSolving ? await $.clock.now() : null
+  await update($, question, () => ({ ...nextQuestion(p, Math.random, previous), startedAt, auto: isSolving }))
   await update($, draft, () => '')
+  if (startedAt !== null) await update($, clock, () => startedAt)
 }
 
 // The question shows, and its clock starts, when the person focuses the answer
 // box, so reading Claude's output or working it out unseen never counts.
 async function reveal($: EngineInterface) {
   const now = await $.clock.now()
-  await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now } : cur))
+  await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now, auto: false } : cur))
+  await update($, clock, () => now)
 }
 
 async function setPaused($: EngineInterface, paused: boolean) {
@@ -75,16 +85,46 @@ async function answer($: EngineInterface, text: string, hasSound: boolean) {
 
   const now = await $.clock.now()
   const seconds = q.startedAt === null ? q.targetSeconds : (now - q.startedAt) / 1000
+  const { isCorrect, gained } = await record($, q, given, seconds, now, hasSound)
+  const text_ = isCorrect
+    ? `✓ ${q.prompt} = ${q.answer}  +${gained} XP (${seconds.toFixed(1)}s)`
+    : `✗ ${q.prompt} = ${q.answer}, not ${given}`
+  await update($, feedback, (): Feedback => ({ isCorrect, text: text_ }))
 
-  // Grade against the stored profile so another session's progress is kept.
+  await freshQuestion($, true)
+}
+
+// Out of time: a miss, unless the question revealed itself and the person
+// never typed, which means they stepped away; then the run stops quietly.
+async function timeOut($: EngineInterface, q: Question, now: number, hasSound: boolean) {
+  if (q.auto && (await read($, draft)) === '') {
+    await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏸ ${q.prompt} = ${q.answer} went unanswered; not counted` }))
+    await freshQuestion($)
+    return
+  }
+
+  await record($, q, NaN, (now - (q.startedAt ?? now)) / 1000, now, hasSound)
+  await update($, feedback, (): Feedback => ({ isCorrect: false, text: `⏱ Time's up: ${q.prompt} = ${q.answer}` }))
+  await freshQuestion($, true)
+}
+
+// Once a second: move the countdown of a revealed question, and time it out
+// once its limit has passed.
+async function tick($: EngineInterface, timeLimit: number, hasSound: boolean) {
+  const q = await read($, question)
+  if (!q || q.startedAt === null) return
+
+  const now = await $.clock.now()
+  await update($, clock, () => now)
+  if (now - q.startedAt >= limitFor(q, timeLimit) * 1000) await timeOut($, q, now, hasSound)
+}
+
+// Grades one answer against the stored profile (so another session's progress
+// is kept), saves it, and celebrates level-ups and achievements.
+async function record($: EngineInterface, q: Question, given: number, seconds: number, now: number, hasSound: boolean) {
   const result = grade(await loadProfile($), q, given, seconds, now)
   await $.store.set('profile', result.profile)
   await update($, profile, () => result.profile)
-
-  const text_ = result.isCorrect
-    ? `✓ ${q.prompt} = ${q.answer}  +${result.gained} XP (${seconds.toFixed(1)}s)`
-    : `✗ ${q.prompt} = ${q.answer}, not ${given}`
-  await update($, feedback, (): Feedback => ({ isCorrect: result.isCorrect, text: text_ }))
 
   for (const a of result.earned) $.ui.toast(`🏆 ${a.name}: ${a.description}`)
   if (result.leveledUp) {
@@ -97,12 +137,13 @@ async function answer($: EngineInterface, text: string, hasSound: boolean) {
   }
   $.ui.status(statusLine(result.profile))
 
-  await freshQuestion($)
+  return result
 }
 
 export const register: Register = (on, options) => {
   const delayMs = Math.max(0, Number(options.delaySeconds ?? 0)) * 1000
   const hasSound = options.sound !== false
+  const timeLimit = Number(options.timeLimitSeconds ?? 20)
 
   on('session.start', async ($, e, next) => {
     const loaded = await loadProfile($)
@@ -115,6 +156,10 @@ export const register: Register = (on, options) => {
     // as it was, or by an older version of the mod: pick again.
     const q = await read($, question)
     if (q && (typeof (q as { skill?: unknown }).skill !== 'string' || q.startedAt === null)) await freshQuestion($)
+
+    // Once a second while a question is revealed: move the countdown, and time
+    // the question out when its limit has passed.
+    $.clock.every(1000, () => void tick($, timeLimit, hasSound))
 
     await $.command.register({ name: 'math', description: 'mathlete stats pane; /math stats, /math pause, /math resume, /math reset' })
 
@@ -196,6 +241,8 @@ export const register: Register = (on, options) => {
       : q.prompt.includes('?')
         ? `${q.prompt}  `
         : `${q.prompt} = `
+    const limit = limitFor(q, timeLimit)
+    const left = q.startedAt === null || limit === Infinity ? null : Math.max(0, Math.ceil(limit - ((await read($, clock)) - q.startedAt) / 1000))
 
     return (
       <Box flexDirection="column">
@@ -221,7 +268,8 @@ export const register: Register = (on, options) => {
             onSubmit={text => answer($, text, hasSound)}
           />
           <Text> </Text>
-          <Button key="skip" label="skip" onPress={() => freshQuestion($)} />
+          <Button key="skip" label="skip" onPress={() => freshQuestion($, isRevealed)} />
+          {left !== null && <Text color={left <= 5 ? 'red' : undefined} dimColor={left > 5}>  ⏱ {left}s</Text>}
         </Box>
         {fb && <Text color={fb.isCorrect ? 'green' : 'red'}>{fb.text}</Text>}
       </Box>
