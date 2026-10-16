@@ -4,6 +4,7 @@ import type { Question } from '../types'
 import {
   EMPTY_PROFILE,
   chooseStep,
+  effectiveRating,
   grade,
   levelFor,
   nextQuestion,
@@ -93,7 +94,7 @@ test('wrong answers lower the rating and reset the streak', async () => {
 test('fast answers, harder steps and streaks earn more XP', async () => {
   expect(xpFor(q(), 10, 0)).toBe(10)
   expect(xpFor(q(), 0, 0)).toBe(20)
-  expect(xpFor(q(), 0, 20)).toBe(40)
+  expect(xpFor(q(), 0, 20)).toBe(30)
   expect(xpFor(q({ skill: 'mul', step: 2 }), 10, 0)).toBe(30)
 })
 
@@ -150,10 +151,39 @@ test('achievements are earned once, when their condition is first met', async ()
 })
 
 test('the hardest step earns Top Shelf, and Blitz when fast', async () => {
-  const hard = q({ skill: 'mul', step: 5, targetSeconds: 15, prompt: '17 × 23', answer: 391 })
+  const top = skillById('mul').steps.length - 1
+  const hard = q({ skill: 'mul', step: top, targetSeconds: 30, prompt: '217 × 23', answer: 4991 })
   const p = { ...EMPTY_PROFILE, achievements: { first: 'x', quick: 'x' } }
-  expect(grade(p, hard, 391, 12, NOON).earned.map(a => a.id)).toEqual(['topshelf'])
-  expect(grade(p, hard, 391, 7, NOON).earned.map(a => a.id)).toEqual(['blitz', 'topshelf'])
+  expect(grade(p, hard, 4991, 25, NOON).earned.map(a => a.id)).toEqual(['topshelf'])
+  expect(grade(p, hard, 4991, 14, NOON).earned.map(a => a.id)).toEqual(['blitz', 'topshelf'])
+})
+
+test('levels 1 to 5 stay easy, and each level after lifts the difficulty floor', async () => {
+  const rng = seeded(5)
+  const steps = (xp: number, skill: string) => {
+    const p = { ...EMPTY_PROFILE, xp }
+    let sum = 0, n = 0
+    for (let i = 0; i < 400; i++) {
+      const question = nextQuestion(p, rng)
+      if (question.skill === skill) (sum += question.step), n++
+    }
+    return sum / n
+  }
+  expect(steps(xpForLevel(5), 'add') < 1).toBe(true)
+  expect(steps(xpForLevel(13), 'add') >= 4).toBe(true)
+  expect(steps(xpForLevel(20), 'add') >= 7).toBe(true)
+  expect(steps(xpForLevel(13), 'mod') < 1).toBe(true)
+
+  const lv13 = { ...EMPTY_PROFILE, xp: xpForLevel(13) }
+  expect(effectiveRating(lv13, skillById('add'))).toBe(1560)
+  expect(effectiveRating(lv13, skillById('pow'))).toBe(1210)
+  expect(effectiveRating({ ...lv13, skills: { add: { rating: 1700, solved: 50, attempted: 55 } } }, skillById('add'))).toBe(1700)
+})
+
+test('a right answer at a level floor lifts the skill rating to the floor', async () => {
+  const lv13 = { ...EMPTY_PROFILE, xp: xpForLevel(13) }
+  const hard = q({ step: 5, targetSeconds: 10, prompt: '512 + 487', answer: 999 })
+  expect(grade(lv13, hard, 999, 5, NOON).profile.skills.add!.rating > 1560).toBe(true)
 })
 
 test('each answer adds to its day and the rating trend, both capped', async () => {

@@ -5,6 +5,7 @@ import type { Engine } from 'claude-code/testing'
 const BAND = {
   plugin: 'mathlete',
   component: 'AbovePrompt',
+  requestId: 'band',
   props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
@@ -31,6 +32,7 @@ function engine(on: On, profile?: object) {
   on('ui.toast', ($, e) => (toasts.push(e.text), { value: undefined }))
   on('audio.play', ($, e) => (sounds.push('asset' in e.clip ? String(e.clip.asset) : '?'), { value: undefined }))
   on('ui.open', ($, e) => (panes.push(e.id), { value: { isPlaced: true as const } }))
+  on('ui.focus', () => ({}))
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
@@ -44,6 +46,12 @@ const solve = (label: string) => {
   return op === '+' ? x + y : op === '−' ? x - y : op === '×' ? x * y : x / y
 }
 
+// What ctrl+x tab does: the answer box takes the ring and the question shows.
+async function focusBand($: Engine, ui: { find: (q: { key: string }) => Promise<{ props: Record<string, unknown> } | undefined> }) {
+  await $.ui.focus({ component: 'AbovePrompt', requestId: 'band', plugin: 'mathlete', element: 'answer', origin: { kind: 'person' } })
+  return solve(String((await ui.find({ key: 'answer' }))?.props.label))
+}
+
 async function start($: Engine, turnId = 't1') {
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.turn.start({ text: 'hi', turnId })
@@ -55,8 +63,7 @@ test('a question shows while Claude works and a right answer earns saved XP', as
   expect(status.at(-1)).toContain('Lv 1')
 
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const answer = solve(String((await ui.find({ key: 'answer' }))?.props.label))
-  await ui.input({ key: 'answer', text: String(answer).slice(0, 1), kind: 'change' })
+  const answer = await focusBand($, ui)
   await clock.advance(1000)
   await ui.input({ key: 'answer', text: String(answer) })
 
@@ -70,11 +77,27 @@ test('a question shows while Claude works and a right answer earns saved XP', as
   expect(stats.text).toMatch(/Addition\s+10\d\d/)
 })
 
+test('the question stays hidden, and its clock still, until the band is focused', async ($, on) => {
+  const { clock } = engine(on)
+  await start($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const hidden = await ui.find({ key: 'answer' })
+  expect(String(hidden?.props.label)).toMatch(/^★+☆+ ▸ $/)
+  expect(hidden?.props.placeholder).toBe('ctrl+x tab to reveal')
+
+  await clock.advance(30000)
+  const answer = await focusBand($, ui)
+  expect(Number.isFinite(answer)).toBe(true)
+  await clock.advance(2000)
+  await ui.input({ key: 'answer', text: String(answer) })
+  expect((await ui.find({ type: 'Text', text: /✓/ }))?.text).toContain('(2.0s)')
+})
+
 test('typing works the same on desktop', async ($, on) => {
   engine(on)
   await start($)
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const answer = solve(String((await ui.find({ key: 'answer' }))?.props.label))
+  const answer = await focusBand($, ui)
   await ui.input({ key: 'answer', text: String(answer) })
   expect(await ui.find({ text: /✓/ })).toBeDefined()
 })
@@ -84,7 +107,7 @@ test('a wrong answer shows the right one and resets the streak', async ($, on) =
   await start($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const answer = solve(String((await ui.find({ key: 'answer' }))?.props.label))
+  const answer = await focusBand($, ui)
   await ui.input({ key: 'answer', text: String(answer + 1) })
 
   expect((await ui.find({ text: /✗/ }))?.text).toContain(`= ${answer}`)
@@ -95,7 +118,7 @@ test('the first right answer earns an achievement with a toast and a chime', asy
   const { toasts, sounds } = engine(on)
   await start($)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const answer = solve(String((await ui.find({ key: 'answer' }))?.props.label))
+  const answer = await focusBand($, ui)
   await ui.input({ key: 'answer', text: String(answer) })
   expect(toasts).toContain('🏆 First Blood: Get your first answer right')
   expect(sounds).toEqual(['sounds/achievement.wav'])
@@ -105,7 +128,7 @@ test('sound off plays nothing', { options: { sound: false } }, async ($, on) => 
   const { sounds, toasts } = engine(on)
   await start($)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const answer = solve(String((await ui.find({ key: 'answer' }))?.props.label))
+  const answer = await focusBand($, ui)
   await ui.input({ key: 'answer', text: String(answer) })
   expect(toasts.length > 0).toBe(true)
   expect(sounds).toEqual([])
@@ -163,7 +186,7 @@ test('/math opens the stats pane with skills, history and achievements', async (
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Text', text: /Level 3 · Times Table Tamer/ })).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: /^Addition/ }))?.text).toMatch(/★★☆☆☆☆\s+1180 [▁▃▅█]{4}/)
+    expect((await ui.find({ type: 'Text', text: /^Addition/ }))?.text).toMatch(/★★★☆{6}\s+1180 [▁▃▅█]{4}/)
     expect(await ui.find({ type: 'Text', text: /Multiplication/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^Division/ }))?.text).toContain('🔒 level 4')
     expect((await ui.find({ type: 'Text', text: /XP this week/ }))?.text).toContain('180 XP this week · today 6/7')

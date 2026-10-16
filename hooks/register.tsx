@@ -6,6 +6,7 @@ import { ACHIEVEMENTS } from './achievements'
 import {
   EMPTY_PROFILE,
   chooseStep,
+  effectiveRating,
   dayKey,
   grade,
   lastDays,
@@ -43,6 +44,13 @@ async function freshQuestion($: EngineInterface) {
   const p = await read($, profile)
   await update($, question, () => nextQuestion(p, Math.random, previous))
   await update($, draft, () => '')
+}
+
+// The question shows, and its clock starts, when the person focuses the answer
+// box, so reading Claude's output or working it out unseen never counts.
+async function reveal($: EngineInterface) {
+  const now = await $.clock.now()
+  await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now } : cur))
 }
 
 async function setPaused($: EngineInterface, paused: boolean) {
@@ -145,12 +153,18 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('ui.focus', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.plugin === 'mathlete' && e.element === 'answer') await reveal($)
+
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || e.surface === 'mobile' || (await read($, isPaused))) return next(e)
 
     const q = await read($, question)
     if (!q) return next(e)
-    // Show once Claude has worked for the delay, and stay up once typing starts.
+    // Show once Claude has worked for the delay, and stay up once revealed.
     const isArmed = (await read($, armedTurn)) === (await read($, currentTurn))
     if (q.startedAt === null && !(e.props.isWorking && isArmed)) return next(e)
 
@@ -160,6 +174,13 @@ export const register: Register = (on, options) => {
     const { level, into, span } = levelProgress(p)
     const { Box, Button, Input, Text } = $.ui.resolve(e)
     const barWidth = Math.max(5, Math.min(20, e.props.bodyColumns - 50))
+    const skill = skillById(q.skill)
+    const isRevealed = q.startedAt !== null
+    const label = !isRevealed
+      ? `${stars(q.step, skill.steps.length)} ▸ `
+      : q.prompt.includes('?')
+        ? `${q.prompt}  `
+        : `${q.prompt} = `
 
     return (
       <Box flexDirection="column">
@@ -167,20 +188,20 @@ export const register: Register = (on, options) => {
           <Text bold>🧮 Lv {level} </Text>
           <Text dimColor>
             {progressBar(p, barWidth)} {into}/{span} XP
-            {p.streak > 0 ? `  🔥 ${p.streak}` : ''}  · {skillById(q.skill).name}
+            {p.streak > 0 ? `  🔥 ${p.streak}` : ''}  · {skill.name}
           </Text>
         </Box>
         <Box>
           <Input
             key="answer"
-            label={`${q.prompt} = `}
-            placeholder="ctrl+x tab to answer"
+            label={label}
+            placeholder={isRevealed ? 'answer' : 'ctrl+x tab to reveal'}
             submitLabel="check"
             value={value}
+            autoFocus
             onInput={async text => {
               await update($, draft, () => text)
-              const now = await $.clock.now()
-              await update($, question, cur => (cur && cur.startedAt === null ? { ...cur, startedAt: now } : cur))
+              await reveal($)
             }}
             onSubmit={text => answer($, text, hasSound)}
           />
@@ -234,10 +255,11 @@ export const register: Register = (on, options) => {
           const name = skill.name.padEnd(15)
           if (skill.unlockLevel > level) return row(`${name} 🔒 level ${skill.unlockLevel}`, true)
           const r = skillRecord(p, skill.id)
-          const step = chooseStep(skill, r.rating, () => 0.5)
+          const rating = effectiveRating(p, skill)
+          const step = chooseStep(skill, rating, () => 0.5)
           const trend = sparkline(p.trend[skill.id] ?? []).padEnd(12)
           return row(
-            `${name} ${stars(step, skill.steps.length).padEnd(6)} ${String(r.rating).padStart(5)} ${trend} ${pct(r.solved, r.attempted).padStart(4)}`,
+            `${name} ${stars(step, skill.steps.length).padEnd(9)} ${String(rating).padStart(5)} ${trend} ${pct(r.solved, r.attempted).padStart(4)}`,
           )
         })}
         <Text> </Text>

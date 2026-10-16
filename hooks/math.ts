@@ -8,10 +8,16 @@ export type { Rng } from './skills'
 
 // Ratings are Elo-style: a skill starts at 1000 and each difficulty step of a
 // skill has a fixed rating. A question is picked so the chance of getting it
-// right is about 80%.
+// right is about 70%.
 const START_RATING = 1000
 const STEP_RATING = (step: number) => 800 + 120 * step
-const TARGET_GAP = 240 // rating − question rating where P(correct) ≈ 0.8
+const TARGET_GAP = 150 // rating − question rating where P(correct) ≈ 0.7
+
+// Past level 5 each level lifts every skill's rating floor, so a high level
+// never gets easy questions however few answers a skill has had. A skill
+// unlocked late starts its climb from its own unlock level.
+const FLOOR_FREE_LEVELS = 5
+const FLOOR_PER_LEVEL = 70
 
 export const EMPTY_PROFILE: Profile = {
   xp: 0,
@@ -67,6 +73,13 @@ export const unlockedSkills = (level: number) => SKILLS.filter(s => s.unlockLeve
 export const skillRecord = (profile: Profile, id: string): SkillRecord =>
   profile.skills[id] ?? { rating: START_RATING, solved: 0, attempted: 0 }
 
+export const levelFloor = (level: number, skill: Skill) =>
+  START_RATING + FLOOR_PER_LEVEL * Math.max(0, level - Math.max(FLOOR_FREE_LEVELS, skill.unlockLevel))
+
+// The rating questions are picked by: the skill's own, or the level's floor.
+export const effectiveRating = (profile: Profile, skill: Skill) =>
+  Math.max(skillRecord(profile, skill.id).rating, levelFloor(levelFor(profile.xp), skill))
+
 export const expected = (rating: number, questionRating: number) =>
   1 / (1 + 10 ** ((questionRating - rating) / 400))
 
@@ -75,8 +88,8 @@ export const expected = (rating: number, questionRating: number) =>
 export function chooseSkill(profile: Profile, rng: Rng, previous?: string): Skill {
   const level = levelFor(profile.xp)
   const weighted = unlockedSkills(level).map(skill => {
-    const { rating } = skillRecord(profile, skill.id)
-    let w = 1 + Math.max(0, (1100 - rating) / 300)
+    const aboveFloor = effectiveRating(profile, skill) - levelFloor(level, skill)
+    let w = 1 + Math.max(0, (100 - aboveFloor) / 300)
     if (skill.unlockLevel >= level - 1 && skill.unlockLevel > 1) w += 2
     if (skill.id === previous) w *= 0.3
     return { skill, w }
@@ -101,7 +114,7 @@ export function chooseStep(skill: Skill, rating: number, rng: Rng): number {
 export function nextQuestion(profile: Profile, rng: Rng, previous?: Question | null): Question {
   for (let tries = 0; ; tries++) {
     const skill = chooseSkill(profile, rng, previous?.skill)
-    const step = chooseStep(skill, skillRecord(profile, skill.id).rating, rng)
+    const step = chooseStep(skill, effectiveRating(profile, skill), rng)
     const { targetSeconds, make } = skill.steps[step]!
     const { prompt, answer } = make(rng)
     if (prompt !== previous?.prompt || tries >= 5) {
@@ -129,7 +142,7 @@ export function xpFor(question: Question, seconds: number, streak: number): numb
   const skill = skillById(question.skill)
   const base = 10 * skill.tier * (1 + 0.25 * question.step)
   const speed = 1 + Math.min(1, Math.max(0, (question.targetSeconds - seconds) / question.targetSeconds))
-  const streakMult = Math.min(1 + 0.1 * streak, 2)
+  const streakMult = Math.min(1 + 0.05 * streak, 1.5)
   return Math.round(base * speed * streakMult)
 }
 
@@ -158,8 +171,9 @@ export function grade(before: Profile, q: Question, given: number, seconds: numb
   const streak = isCorrect ? before.streak + 1 : 0
 
   const record = skillRecord(before, q.skill)
+  const from = effectiveRating(before, skillById(q.skill))
   const k = record.attempted < 15 ? 48 : 32
-  const rating = record.rating + k * (outcome(isCorrect, seconds, q.targetSeconds) - expected(record.rating, STEP_RATING(q.step)))
+  const rating = from + k * (outcome(isCorrect, seconds, q.targetSeconds) - expected(from, STEP_RATING(q.step)))
 
   const today = dayKey(now)
   const dayStreak = !isCorrect || before.lastDay === today ? before.dayStreak : before.lastDay === dayBefore(now) ? before.dayStreak + 1 : 1
@@ -197,15 +211,15 @@ export function grade(before: Profile, q: Question, given: number, seconds: numb
     trend: { ...before.trend, [q.skill]: [...(before.trend[q.skill] ?? []), Math.round(rating)].slice(-TREND_KEPT) },
   }
 
-  const from = levelFor(before.xp)
+  const fromLevel = levelFor(before.xp)
   const to = levelFor(profile.xp)
-  const unlocked = SKILLS.filter(s => s.unlockLevel > from && s.unlockLevel <= to)
+  const unlocked = SKILLS.filter(s => s.unlockLevel > fromLevel && s.unlockLevel <= to)
 
   const answer = { question: q, isCorrect, seconds, now, level: to }
   const earned = ACHIEVEMENTS.filter(a => !before.achievements[a.id] && a.check(profile, answer))
   for (const a of earned) profile.achievements = { ...profile.achievements, [a.id]: today }
 
-  return { profile, isCorrect, gained, leveledUp: to > from, unlocked, earned }
+  return { profile, isCorrect, gained, leveledUp: to > fromLevel, unlocked, earned }
 }
 
 export function levelProgress(profile: Profile) {
@@ -266,7 +280,7 @@ export function statsText(profile: Profile, isPaused: boolean): string {
       continue
     }
     const r = skillRecord(profile, skill.id)
-    lines.push(`${name} ${String(r.rating).padStart(6)}  ${pct(r.solved, r.attempted).padStart(8)}  (${r.solved}/${r.attempted})`)
+    lines.push(`${name} ${String(effectiveRating(profile, skill)).padStart(6)}  ${pct(r.solved, r.attempted).padStart(8)}  (${r.solved}/${r.attempted})`)
   }
   lines.push('', 'While Claude works, ctrl+x tab (or click) focuses the band above the prompt; Esc returns.', '/math opens the stats pane; /math pause and /math resume turn the questions off and on.')
   return lines.join('\n')

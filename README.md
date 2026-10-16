@@ -2,7 +2,7 @@
 
 Mental math for the time you spend waiting on Claude Code.
 
-While Claude works, a question shows up in a band above your prompt. Answer it, earn XP, level up, and unlock harder skills. Questions adapt to how well you do, so they stay hard enough to be fun. Everything is saved on your machine. Nothing is sent anywhere.
+While Claude works, a question shows up in a band above your prompt. Answer it, earn XP, level up, and unlock harder skills. Levels 1 to 5 are a warm-up. After that every level makes every skill harder, and the questions also adapt to how well you do. Everything is saved on your machine. Nothing is sent anywhere.
 
 ```
 🧮 Lv 7 ████████████░░░░ 412/650 XP  🔥 4  · Percentages
@@ -31,8 +31,9 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 ## How to play
 
 1. Send Claude any prompt. While it works, a question appears above the prompt.
-2. Press **ctrl+x tab** (or click the band) to move into it. Type the answer and press Enter.
-3. Press **Esc** to go back to your prompt. If you have started typing an answer, the band stays up after Claude finishes.
+2. The band shows only the skill and its difficulty. Press **ctrl+x tab** (or click the band) to reveal the question. The clock starts when it is revealed.
+3. Type the answer and press Enter.
+4. Press **Esc** to go back to your prompt. Once a question is revealed, the band stays up after Claude finishes.
 
 The status line under the prompt shows your level, XP and streak.
 
@@ -47,26 +48,31 @@ The status line under the prompt shows your level, XP and streak.
 
 ## Skills
 
-Each level unlocks a skill. Each skill has several difficulty steps.
+Each skill unlocks at a level and has several difficulty steps.
 
 | Level | Skill | Easiest | Hardest |
 | --- | --- | --- | --- |
-| 1 | Addition | 7 + 5 | 3-digit + 3-digit |
-| 2 | Subtraction | within 20 | 3-digit − 3-digit |
-| 3 | Multiplication | ×2–5 tables | 2-digit × 2-digit |
-| 4 | Division | ÷2–5 tables | 3-digit ÷ 1-digit |
-| 5 | Squares | 7² | 21² to 50² |
-| 6 | Percentages | 10% of 80 | 65% of 340 |
-| 8 | Chains | 12 + 9 − 4 | 23 × 7 + 6 × 8 |
-| 10 | Powers | 2^6 | 2^16 |
+| 1 | Addition | 7 + 5 | 418 + 907 + 365 |
+| 2 | Subtraction | within 20 | 5-digit − 4-digit |
+| 3 | Multiplication | ×2–5 tables | 3-digit × 2-digit |
+| 4 | Division | ÷2–5 tables | 4-to-5-digit ÷ 2-digit |
+| 5 | Squares | 7² | 131² to 199² |
+| 6 | Percentages | 10% of 80 | 480 → 552 is +?% |
+| 8 | Chains | 12 + 9 − 4 | 23 × 7 + 16 × 8 − 6 × 9 |
+| 10 | Powers & Roots | 2^6 | √7396, ∛9261, 8^4 |
+| 12 | Remainders | 47 mod 5 | 7342 mod 29 |
+| 14 | Fractions | 3/4 of 36 | 3/8 + 5/12 = ?/24 |
+| 16 | Speed Tricks | 47 × 11 | 638 × 999 |
+| 18 | Big Products | 412 × 7 | 3-digit × 3-digit |
 
 ## How scoring works
 
-- **Difficulty.** Each skill has its own rating that starts at 1000 and works like a chess (Elo) rating. Questions are chosen so you get about 80% right. A fast right answer counts as a full win. A slow right answer counts for a bit less. A wrong answer is a loss.
+- **Difficulty.** Each skill has its own rating that starts at 1000 and works like a chess (Elo) rating. Questions are chosen so you get about 70% right. A fast right answer counts as a full win. A slow right answer counts for a bit less. A wrong answer is a loss.
+- **Level floor.** From level 6, each level raises the lowest rating every skill can have by 70. A skill that unlocks after level 5 starts rising from its own unlock level. So a high level never gets easy questions, even in a skill you have barely played.
 - **Which skill comes next.** Skills you just unlocked and skills you are weak at come up more often. The skill you just did comes up less often.
-- **XP.** A right answer earns `10 × skill tier × (1 + 0.25 × difficulty step)`. Beating the target time can double that, and a streak can double it again. A wrong answer earns nothing and resets your streak. You never lose XP.
+- **XP.** A right answer earns `10 × skill tier × (1 + 0.25 × difficulty step)`. Beating the target time can double that, and a streak adds up to 50% more. A wrong answer earns nothing and resets your streak. You never lose XP.
 - **Levels.** Reaching level L takes `50 × (L − 1)²` XP in total.
-- **Timing.** The clock starts at your first keystroke, not when the question appears, so reading Claude's output does not count against you.
+- **Timing.** The clock starts when you reveal the question, so reading Claude's output does not count against you, and you cannot work out the answer before the clock starts.
 
 There are 17 achievements, from your first right answer to a 30-day streak.
 
